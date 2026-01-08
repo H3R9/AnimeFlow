@@ -1,5 +1,6 @@
 import streamlit as st
-import requests
+import cloudscraper
+from bs4 import BeautifulSoup
 from bs4 import BeautifulSoup
 import re
 import json
@@ -164,7 +165,8 @@ def save_history(anime_data, episode_num):
 def get_latest_animes():
     """Fetches latest episodes/animes from homepage to populate empty state."""
     try:
-        response = requests.get(BASE_URL, headers=HEADERS, timeout=10)
+        scraper = cloudscraper.create_scraper()
+        response = scraper.get(BASE_URL, headers=HEADERS, timeout=10)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
         
@@ -195,13 +197,37 @@ def get_latest_animes():
         # Fail silently for UI polish, return empty
         return []
 
+def get_random_anime():
+    """Fetches a random anime from the /proc/aleatorio endpoint."""
+    try:
+        scraper = cloudscraper.create_scraper()
+        # Redirects are followed by default, so we land on the anime page
+        resp = scraper.get(f"{BASE_URL}/proc/aleatorio", headers=HEADERS, timeout=10)
+        soup = BeautifulSoup(resp.content, 'html.parser')
+        
+        # Robust extraction using Open Graph metadata
+        title = soup.find("meta", property="og:title")
+        img = soup.find("meta", property="og:image")
+        
+        if title and img:
+            # Clean title (remove " - AnimeFire")
+            title_text = title['content'].replace(" - AnimeFire", "").strip()
+            return {
+                'title': title_text,
+                'url': resp.url,
+                'img': img['content']
+            }
+        return None
+    except: return None
+
 def search_anime(query):
     try:
         # Improved error handling for Search
         query_slug = query.lower().strip().replace(" ", "-") 
         search_url = f"{BASE_URL}/pesquisar/{query_slug}"
         
-        response = requests.get(search_url, headers=HEADERS, timeout=10)
+        scraper = cloudscraper.create_scraper()
+        response = scraper.get(search_url, headers=HEADERS, timeout=10)
         response.raise_for_status() # Will trigger except if 404 or 500
         
         soup = BeautifulSoup(response.content, 'html.parser')
@@ -236,7 +262,8 @@ def search_anime(query):
 
 def get_episodes(anime_url):
     try:
-        response = requests.get(anime_url, headers=HEADERS, timeout=10)
+        scraper = cloudscraper.create_scraper()
+        response = scraper.get(anime_url, headers=HEADERS, timeout=10)
         soup = BeautifulSoup(response.content, 'html.parser')
         episodes = []
         for link in soup.select('a.lEp'):
@@ -249,12 +276,13 @@ def get_episodes(anime_url):
 
 def get_video_url(episode_url):
     try:
-        resp = requests.get(episode_url, headers=HEADERS, timeout=10)
+        scraper = cloudscraper.create_scraper()
+        resp = scraper.get(episode_url, headers=HEADERS, timeout=10)
         soup = BeautifulSoup(resp.content, 'html.parser')
         vid_elem = soup.select_one('#my-video')
         if not vid_elem or not vid_elem.get('data-video-src'): return None
         api_url = vid_elem.get('data-video-src')
-        api_data = requests.get(api_url, headers=HEADERS, timeout=10).json()
+        api_data = scraper.get(api_url, headers=HEADERS, timeout=10).json()
         if 'data' in api_data and api_data['data']:
             return api_data['data'][-1]['src']
         return None
@@ -274,7 +302,7 @@ def ui_card(anime, key_prefix):
 
 def top_bar():
     """Professional Header with Logo and Search."""
-    c1, c2 = st.columns([1, 2])
+    c1, c2, c3 = st.columns([1, 1, 2])
     with c1:
         if st.button("ANIMEFLOW", key="logo_home", type="secondary"):
             st.session_state.view = "home"
@@ -283,6 +311,17 @@ def top_bar():
             st.rerun()
             
     with c2:
+        if st.button("🎲 Surpreenda-me", help="Assistir anime aleatório"):
+            with st.spinner("Sorteando..."):
+                anime = get_random_anime()
+                if anime:
+                    st.session_state.selected_anime = anime
+                    st.session_state.view = "anime"
+                    st.rerun()
+                else:
+                    st.error("Erro ao sortear. Tente de novo!")
+
+    with c3:
         # Search directly in header
         query = st.text_input("Buscar", placeholder="Pesquisar animes...", label_visibility="collapsed", key="search_bar")
         if query:
