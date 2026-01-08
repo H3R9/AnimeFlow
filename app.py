@@ -209,11 +209,24 @@ def search_anime(query):
         
         # Selectors updated to be broad enough
         for card in soup.select('.divCardUltimosEps'):
-            title = card.select_one('.animeTitle').text.strip()
-            link = card.select_one('a')['href']
-            img = card.select_one('img')
-            img_src = img.get('data-src') or img.get('src')
-            results.append({'title': title, 'url': link, 'img': img_src})
+            try:
+                title_elem = card.select_one('.animeTitle')
+                link_elem = card.select_one('a')
+                img_elem = card.select_one('img')
+                
+                if title_elem and link_elem and img_elem:
+                    title = title_elem.text.strip()
+                    link = link_elem['href']
+                    img_src = img_elem.get('data-src') or img_elem.get('src')
+                    
+                    # Ensure absolute URL if needed (though search usually gives absolute)
+                    if link.startswith('/'):
+                        link = f"{BASE_URL}{link}"
+                        
+                    results.append({'title': title, 'url': link, 'img': img_src})
+            except Exception as inner_e:
+                print(f"Skipping card due to error: {inner_e}")
+                continue
             
         return results
     except Exception as e:
@@ -293,20 +306,10 @@ def view_home():
             with cols[idx]:
                 ui_card(anime, "hist")
 
-    # 2. Latest Releases (New Feature)
-    st.subheader("Lançamentos Recentes")
-    latest = get_latest_animes()
-    
-    if latest:
-        # Grid of 4 columns
-        rows = [latest[i:i+4] for i in range(0, len(latest), 4)]
-        for row in rows:
-            cols = st.columns(4)
-            for idx, anime in enumerate(row):
-                with cols[idx]:
-                    ui_card(anime, f"latest_{idx}")
-    else:
-        st.info("Carregando catálogo...")
+    # 2. Latest Releases - Removed per user request
+    # Only show hint if history is empty
+    if not history:
+        st.info("Para começar, pesquise um anime na barra acima. ☝️")
 
 def view_search_results():
     query = st.session_state.get("search_query", "")
