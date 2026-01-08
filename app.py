@@ -9,9 +9,9 @@ from datetime import datetime
 # --- Configuration ---
 st.set_page_config(
     page_title="AnimeFlow",
-    page_icon="🌊",
+    page_icon="🎬",
     layout="wide",
-    initial_sidebar_state="collapsed" # Mobile friendly default
+    initial_sidebar_state="collapsed"
 )
 
 BASE_URL = "https://animefire.plus"
@@ -21,79 +21,122 @@ HEADERS = {
 }
 HISTORY_FILE = "watch_history.json"
 
-# --- Custom CSS (Netflix Style) ---
+# --- Professional CSS ---
 st.markdown("""
 <style>
-    /* Global Reset & Dark Theme */
+    /* Import Inter Font */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+
+    /* Global Deep Dark Theme - No Emojis/Playfulness */
     .stApp {
-        background-color: #141414; /* Netflix Deep Black */
-        color: #e5e5e5;
+        background-color: #0F0F0F;
+        color: #E0E0E0;
     }
-    
-    /* Sidebar */
-    [data-testid="stSidebar"] {
-        background-color: #000000;
-        border-right: 1px solid #333;
-    }
-    
-    /* Remove padding for mobile */
+
+    /* Remove Top Padding */
     .block-container {
-        padding-top: 1rem;
-        padding-bottom: 2rem;
+        padding-top: 2rem;
+        padding-bottom: 5rem;
+    }
+
+    /* Header Styling */
+    .header-logo {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: #E50914; /* Netflix Red */
+        letter-spacing: -0.5px;
+        margin-bottom: 0;
+        cursor: pointer;
     }
     
-    /* Card Styling */
-    div[data-testid="stVerticalBlockBorderWrapper"] {
-        background-color: #1f1f1f;
+    /* Search Bar Styling */
+    div[data-testid="stTextInput"] input {
+        background-color: #202020;
+        color: white;
         border: 1px solid #333;
-        border-radius: 8px;
-        transition: transform 0.2s;
-        padding: 0; /* Remove internal padding for cover image look */
+        border-radius: 4px; /* Sharper corners */
+    }
+    div[data-testid="stTextInput"] input:focus {
+        border-color: #E50914;
+        box-shadow: none;
+    }
+
+    /* Card/Grid Styling */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background-color: #1a1a1a;
+        border: none;
+        border-radius: 4px;
+        transition: transform 0.2s ease;
+        padding: 0 !important;
         overflow: hidden;
     }
     div[data-testid="stVerticalBlockBorderWrapper"]:hover {
-        transform: scale(1.03);
-        border-color: #e50914; /* Brand Color Highlight */
-        z-index: 10;
+        transform: scale(1.02);
+        z-index: 5;
+        box-shadow: 0 10px 20px rgba(0,0,0,0.5);
     }
     
-    /* Cover Image full width in card */
+    /* Card Image */
     div[data-testid="stVerticalBlockBorderWrapper"] img {
         width: 100%;
+        aspect-ratio: 2/3;
         object-fit: cover;
-        border-radius: 8px 8px 0 0;
+        border-radius: 4px 4px 0 0;
+        margin-bottom: 0;
     }
     
-    /* Text in Cards */
-    .anime-card-title {
-        padding: 0.5rem;
-        font-weight: bold;
+    /* Card Title Overlay */
+    .card-title {
+        padding: 10px;
+        font-size: 0.9rem;
+        font-weight: 600;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
-        font-size: 0.9rem;
+        color: #fff;
     }
-    
-    /* Custom Buttons - Primary Red */
-    .stButton button[kind="primary"] {
-        background-color: #e50914;
+
+    /* Secondary Text for Mobile */
+    .caption-text {
+        font-size: 0.8rem;
+        color: #aaa;
+    }
+
+    /* Buttons - Clean & Flat */
+    .stButton button {
+        background-color: #333;
         color: white;
         border: none;
-        font-weight: bold;
+        border-radius: 4px;
+        font-weight: 600;
+        transition: background 0.2s;
     }
-    .stButton button[kind="primary"]:hover {
-        background-color: #f40612;
+    .stButton button:hover {
+        background-color: #444;
+        color: white;
     }
     
-    /* Navigation Buttons */
-    .nav-btn {
-        margin-top: 10px;
+    /* Primary Action Buttons */
+    .stButton button[kind="primary"] {
+        background-color: #E50914;
     }
+    .stButton button[kind="primary"]:hover {
+        background-color: #F40612;
+    }
+    
+    /* Hide Streamlit elements */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
     
 </style>
 """, unsafe_allow_html=True)
 
-# --- Logic / Backend Functions (Preserved) ---
+# --- Backend Logic (Core) ---
 
 def load_history():
     if not os.path.exists(HISTORY_FILE): return {}
@@ -117,22 +160,65 @@ def save_history(anime_data, episode_num):
             json.dump(history, f, indent=4, ensure_ascii=False)
     except: pass
 
-def search_anime(query):
+@st.cache_data(ttl=3600)  # Cache for 1 hour to reduce requests
+def get_latest_animes():
+    """Fetches latest episodes/animes from homepage to populate empty state."""
     try:
-        query_slug = query.lower().strip().replace(" ", "-") # Slugify
-        response = requests.get(f"{BASE_URL}/pesquisar/{query_slug}", headers=HEADERS, timeout=10)
+        response = requests.get(BASE_URL, headers=HEADERS, timeout=10)
         response.raise_for_status()
         soup = BeautifulSoup(response.content, 'html.parser')
+        
         results = []
+        # Target the 'Latest Episodes' cards usually on home
+        # Adjust selector based on typical structure observed in debug
+        cards = soup.select('.divCardUltimosEps') or soup.select('article.imgAnimes')
+        
+        for card in cards[:12]: # Limit to 12 items
+            try:
+                title_elem = card.select_one('.animeTitle') or card.select_one('.title')
+                link_elem = card.select_one('a')
+                img_elem = card.select_one('img')
+                
+                if title_elem and link_elem and img_elem:
+                    title = title_elem.text.strip()
+                    link = link_elem['href']
+                    # Handle lazy loading attributes
+                    img = img_elem.get('data-src') or img_elem.get('src')
+                    
+                    if link and not link.startswith('http'):
+                        link = f"{BASE_URL}{link}" if link.startswith('/') else f"{BASE_URL}/{link}"
+                        
+                    results.append({'title': title, 'url': link, 'img': img})
+            except: continue
+        return results
+    except Exception as e:
+        # Fail silently for UI polish, return empty
+        return []
+
+def search_anime(query):
+    try:
+        # Improved error handling for Search
+        query_slug = query.lower().strip().replace(" ", "-") 
+        search_url = f"{BASE_URL}/pesquisar/{query_slug}"
+        
+        response = requests.get(search_url, headers=HEADERS, timeout=10)
+        response.raise_for_status() # Will trigger except if 404 or 500
+        
+        soup = BeautifulSoup(response.content, 'html.parser')
+        results = []
+        
+        # Selectors updated to be broad enough
         for card in soup.select('.divCardUltimosEps'):
             title = card.select_one('.animeTitle').text.strip()
             link = card.select_one('a')['href']
             img = card.select_one('img')
             img_src = img.get('data-src') or img.get('src')
             results.append({'title': title, 'url': link, 'img': img_src})
+            
         return results
     except Exception as e:
-        print(e)
+        # Return error message to user via UI logic, or empty list
+        print(f"Search Error: {e}")
         return []
 
 def get_episodes(anime_url):
@@ -150,262 +236,218 @@ def get_episodes(anime_url):
 
 def get_video_url(episode_url):
     try:
-        # Step 1: Get Page
         resp = requests.get(episode_url, headers=HEADERS, timeout=10)
         soup = BeautifulSoup(resp.content, 'html.parser')
-        
-        # Step 2: Get API Link
         vid_elem = soup.select_one('#my-video')
         if not vid_elem or not vid_elem.get('data-video-src'): return None
-        
-        # Step 3: Call API
         api_url = vid_elem.get('data-video-src')
         api_data = requests.get(api_url, headers=HEADERS, timeout=10).json()
-        
-        # Step 4: Extract Best Quality
         if 'data' in api_data and api_data['data']:
             return api_data['data'][-1]['src']
         return None
     except: return None
 
-# --- UI Helpers ---
+# --- UI Components ---
 
-# Helper to render anime grid card
-def render_anime_card(anime, key_suffix, col):
-    with col:
-        with st.container(border=True):
-            st.image(anime['img'], use_container_width=True)
-            # Custom styled title via markdown + CSS class
-            st.markdown(f"<div class='anime-card-title'>{anime['title']}</div>", unsafe_allow_html=True)
-            if st.button("Assistir", key=f"btn_{key_suffix}_{anime['url']}", use_container_width=True):
-                st.session_state.selected_anime = anime
-                st.session_state.page = "Anime"
-                st.rerun()
+def ui_card(anime, key_prefix):
+    """Renders a single anime card."""
+    with st.container(border=True):
+        st.image(anime['img'], use_container_width=True)
+        st.markdown(f"<div class='card-title'>{anime['title']}</div>", unsafe_allow_html=True)
+        if st.button("Assistir", key=f"{key_prefix}_{anime['url']}", use_container_width=True):
+            st.session_state.selected_anime = anime
+            st.session_state.view = "anime"
+            st.rerun()
 
-# --- Page Views ---
+def top_bar():
+    """Professional Header with Logo and Search."""
+    c1, c2 = st.columns([1, 2])
+    with c1:
+        if st.button("ANIMEFLOW", key="logo_home", type="secondary"):
+            st.session_state.view = "home"
+            st.session_state.selected_anime = None
+            st.session_state.current_episode = None
+            st.rerun()
+            
+    with c2:
+        # Search directly in header
+        query = st.text_input("Buscar", placeholder="Pesquisar animes...", label_visibility="collapsed", key="search_bar")
+        if query:
+            st.session_state.search_query = query
+            st.session_state.view = "search_results"
+            # No rerun usually needed for text_input unless enter is pressed
+            
+# --- Views ---
 
 def view_home():
-    st.header("🏠 Início")
-    
+    # 1. Continue Watching
     history = load_history()
     if history:
         st.subheader("Continuar Assistindo")
         sorted_hist = sorted(history.values(), key=lambda x: x.get('timestamp', ''), reverse=True)
         
-        # Responsive Grid for History
-        # Mobile: 2 cols, Desktop: 4 cols
-        cols = st.columns(4) 
+        # Horizontal scroll feel via columns
+        cols = st.columns(4)
         for idx, item in enumerate(sorted_hist[:4]):
-            anime_obj = {'title': item['anime_title'], 'url': item['anime_url'], 'img': item['cover_image']}
-            render_anime_card(anime_obj, f"hist_{idx}", cols[idx % 4])
-            
-        st.markdown("---")
+            anime = {'title': item['anime_title'], 'url': item['anime_url'], 'img': item['cover_image']}
+            with cols[idx]:
+                ui_card(anime, "hist")
 
-    st.subheader("Sugestões para Você")
-    st.info("💡 Use a barra de busca para encontrar seus animes favoritos.")
-    # Placeholder for trending if we had a scraping function for that
-    # For now, just a call to action
+    # 2. Latest Releases (New Feature)
+    st.subheader("Lançamentos Recentes")
+    latest = get_latest_animes()
+    
+    if latest:
+        # Grid of 4 columns
+        rows = [latest[i:i+4] for i in range(0, len(latest), 4)]
+        for row in rows:
+            cols = st.columns(4)
+            for idx, anime in enumerate(row):
+                with cols[idx]:
+                    ui_card(anime, f"latest_{idx}")
+    else:
+        st.info("Carregando catálogo...")
 
-def view_search():
-    st.header("🔍 Buscar")
+def view_search_results():
+    query = st.session_state.get("search_query", "")
+    st.subheader(f"Resultados para '{query}'")
     
-    col_s1, col_s2 = st.columns([4, 1])
-    with col_s1:
-        query = st.text_input("Nome do Anime", placeholder="Ex: Naruto Shippuden", label_visibility="collapsed")
-    with col_s2:
-        search_btn = st.button("Pesquisar", type="primary", use_container_width=True)
+    if not query:
+        st.warning("Digite algo para buscar.")
+        return
+
+    with st.spinner("Buscando..."):
+        results = search_anime(query)
     
-    if query or search_btn:
-        if query:
-            with st.spinner("Buscando..."):
-                results = search_anime(query)
-            
-            if results:
-                st.write(f"Encontrados: {len(results)}")
-                
-                # Grid Layout 4 cols
-                cols = st.columns(4)
-                for idx, anime in enumerate(results):
-                    render_anime_card(anime, f"search_{idx}", cols[idx % 4])
-            else:
-                st.warning("⚠️ Nenhum anime encontrado. Tente outro nome.")
+    if results:
+        rows = [results[i:i+4] for i in range(0, len(results), 4)]
+        for row in rows:
+            cols = st.columns(4)
+            for idx, anime in enumerate(row):
+                with cols[idx]:
+                    ui_card(anime, f"src_{idx}")
+    else:
+        st.error("Nenhum anime encontrado. Verifique a ortografia.")
+        st.markdown(f"*Dica: Tente buscar pelo nome em japonês ou inglês.*")
 
 def view_anime_details():
-    if not st.session_state.selected_anime:
-        st.session_state.page = "Search"
+    anime = st.session_state.selected_anime
+    if not anime:
+        st.session_state.view = "home"
         st.rerun()
         return
 
-    anime = st.session_state.selected_anime
-    
-    # Breadcrumb style back button
-    if st.button("🔙 Voltar", key="back_to_search"):
-        # Determine where to go back based on history? Simple: just go Home or Search
-        st.session_state.page = "Search"
+    # Back Button
+    if st.button("Voltar", key="back_btn"):
+        st.session_state.view = "home"
         st.rerun()
 
-    # Layout: Cover (Left) | Info & Episodes (Right)
-    col_cover, col_info = st.columns([1, 3])
-    
-    with col_cover:
+    c1, c2 = st.columns([1, 3])
+    with c1:
         st.image(anime['img'], use_container_width=True)
-        st.caption(f"**{anime['title']}**")
-        
-    with col_info:
-        st.subheader(f"{anime['title']}")
-        
+    with c2:
+        st.title(anime['title'])
         history = load_history()
         last_ep = history.get(anime['title'], {}).get('last_episode', 0)
         
         if last_ep > 0:
-            st.info(f"📍 Você parou no episódio **{last_ep}**")
-        
-        with st.spinner("Carregando episódios..."):
-            # Cache this call ideally, but keeping it simple as requested
+            st.markdown(f"**Progresso:** Parou no episódio {last_ep}")
+
+        with st.spinner("Carregando temporadas..."):
             episodes = get_episodes(anime['url'])
             
         if episodes:
-            # Scrollable container for cleaner UI
             with st.container(height=500):
                 for i, ep in enumerate(episodes):
-                    label = ep['title']
-                    btn_kind = "secondary"
+                    ep['index'] = i
+                    label = f"Episódio {ep['num']}"
                     
-                    # Markers
-                    if ep['num'] <= last_ep:
-                        label = f"✅ {ep['title']}"
-                    elif ep['num'] == last_ep + 1:
-                        label = f"▶️ {ep['title']}"
-                        btn_kind = "primary" # Highlight next to watch
-                    
-                    # Store index for next/prev logic
-                    ep['index'] = i 
-                    
-                    if st.button(label, key=f"ep_{ep['url']}", type=btn_kind, use_container_width=True):
+                    # Style
+                    kind = "secondary"
+                    if ep['num'] == last_ep + 1:
+                        kind = "primary" # Next up
+                        label += " (Próximo)"
+                    elif ep['num'] <= last_ep:
+                        label += " (Visto)"
+
+                    if st.button(label, key=f"ep_btn_{ep['url']}", type=kind, use_container_width=True):
                         st.session_state.current_episode = ep
-                        st.session_state.episode_list = episodes # Save list for navigation
-                        st.session_state.page = "Player"
+                        st.session_state.episode_list = episodes
+                        st.session_state.view = "player"
                         st.rerun()
-        else:
-            st.error("Erro ao carregar episódios.")
 
 def view_player():
-    if not st.session_state.current_episode:
-        st.session_state.page = "Home"
+    ep = st.session_state.current_episode
+    anime = st.session_state.selected_anime
+    
+    if not ep:
+        st.session_state.view = "anime"
         st.rerun()
         return
 
-    ep = st.session_state.current_episode
-    anime = st.session_state.selected_anime
-    ep_list = st.session_state.get('episode_list', [])
-    current_idx = ep.get('index', 0)
-    
-    # Back & Title
-    col1, col2 = st.columns([1, 5])
-    with col1:
-        if st.button("🔙 Voltar"):
-            st.session_state.page = "Anime"
+    # Header with Back
+    c1, c2 = st.columns([1, 6])
+    with c1:
+        if st.button("Fechar Player"):
+            st.session_state.view = "anime"
             st.rerun()
-    with col2:
-        st.markdown(f"**{anime['title']}** - {ep['title']}")
-    
-    # Video Area
-    container = st.container()
-    with container:
-        with st.spinner("Conectando ao servidor de vídeo..."):
-            url = get_video_url(ep['url'])
-            if url:
-                save_history(anime, ep['num'])
-                st.video(url)
-            else:
-                st.error("Erro ao carregar vídeo.")
-                st.caption("O servidor pode estar protegido ou o link expirou.")
-                st.link_button("Assistir no Site Original", ep['url'])
+    with c2:
+        st.subheader(f"{anime['title']} - Ep. {ep['num']}")
 
-    # Navigation Controls (Prev / Next)
-    c_prev, c_space, c_next = st.columns([1, 2, 1])
+    # Video
+    with st.spinner("Carregando vídeo..."):
+        url = get_video_url(ep['url'])
+        
+    if url:
+        st.video(url)
+        save_history(anime, ep['num'])
+    else:
+        st.error("Vídeo indisponível no momento.")
+        st.markdown(f"[Assistir no site original]({ep['url']})")
+
+    # Controls
+    ep_list = st.session_state.get('episode_list', [])
+    curr_idx = ep.get('index', 0)
     
+    c_prev, c_space, c_next = st.columns([1, 3, 1])
     with c_prev:
-        if current_idx > 0:
-            prev_ep = ep_list[current_idx - 1]
-            if st.button(f"⏮️ Ep {prev_ep['num']}", use_container_width=True):
-                st.session_state.current_episode = prev_ep
+        if curr_idx > 0:
+            if st.button("Anterior", use_container_width=True):
+                st.session_state.current_episode = ep_list[curr_idx - 1]
                 st.rerun()
-                
     with c_next:
-        if current_idx < len(ep_list) - 1:
-            next_ep = ep_list[current_idx + 1]
-            # Primary color for Next button to encourage binge-watching
-            if st.button(f"Ep {next_ep['num']} ⏭️", type="primary", use_container_width=True):
-                st.session_state.current_episode = next_ep
+        if curr_idx < len(ep_list) - 1:
+            if st.button("Próximo", type="primary", use_container_width=True):
+                st.session_state.current_episode = ep_list[curr_idx + 1]
                 st.rerun()
 
-# --- Main App Entry ---
+# --- Main Logic ---
 
 def main():
-    # Helper to enforce page navigation from Sidebar
-    def nav_callback(key):
-        st.session_state.page = st.session_state[key]
-    
-    # Initialize Session State
-    if 'page' not in st.session_state: st.session_state.page = "Home"
+    # Session State Init
+    if 'view' not in st.session_state: st.session_state.view = "home"
     if 'selected_anime' not in st.session_state: st.session_state.selected_anime = None
     if 'current_episode' not in st.session_state: st.session_state.current_episode = None
-    if 'episode_list' not in st.session_state: st.session_state.episode_list = []
-
-    # Sidebar
-    with st.sidebar:
-        st.title("🌊 AnimeFlow")
-        st.markdown("---")
-        
-        # Navigation Menu
-        # We manually check the selection to update the page state
-        selected = st.radio(
-            "Menu", 
-            ["Home", "Search", "History"],
-            format_func=lambda x: {"Home": "🏠 Início", "Search": "🔍 Buscar", "History": "📜 Histórico"}[x],
-            key="nav_radio",
-            label_visibility="collapsed"
-        )
-        
-        # Sync Sidebar with Main View Logic
-        # If user clicks sidebar, we switch. If view switches internally (to Player), sidebar stays indicating 'context' or just ignores.
-        # Simple approach: Sidebar drives High Level pages. Internal logic drives Low Level (Anime, Player).
-        
-        st.markdown("---")
-        st.caption("v2.0 Premium | Mobile Ready")
-
-    # Routing Logic
-    # If the radio button changed this run, update the page
-    # But if we are in "Anime" or "Player", we don't want the radio to reset us unless the USER clicked it.
-    # Streamlit limitation: Radio sync is tricky.
-    # Workaround: Check if the 'page' state matches a main category. If not, and user clicked radio, we force it.
-    # For now, let's trust the logic:
     
-    # If sidebar selection != current page AND current page is a top-level page, switch.
-    if selected != st.session_state.get('last_selected', 'Home'):
-        st.session_state.page = selected
-        st.session_state.last_selected = selected
-        st.rerun()
-
-    # If we are in Search/Home/History, render.
-    if st.session_state.page == "Home": view_home()
-    elif st.session_state.page == "Search": view_search()
-    elif st.session_state.page == "History": 
-        # History is just Home's continue watching basically, or we can make a dedicated list
-        st.header("📜 Histórico Completo")
-        history = load_history()
-        if history:
-            sorted_hist = sorted(history.values(), key=lambda x: x.get('timestamp', ''), reverse=True)
-            cols = st.columns(4)
-            for idx, item in enumerate(sorted_hist):
-                anime_obj = {'title': item['anime_title'], 'url': item['anime_url'], 'img': item['cover_image']}
-                render_anime_card(anime_obj, f"full_hist_{idx}", cols[idx % 4])
-        else:
-            st.info("Seu histórico está vazio.")
-            
-    elif st.session_state.page == "Anime": view_anime_details()
-    elif st.session_state.page == "Player": view_player()
+    # 1. Fixed Top Bar
+    top_bar() 
+    
+    # 2. Dynamic Content
+    st.markdown("---") # Soft divider
+    
+    if st.session_state.search_query and st.session_state.view != "player" and st.session_state.view != "anime":
+         # If user typed in search, force search view unless watching
+         # NOTE: This allows keeping search active while browsing
+         view_search_results()
+    elif st.session_state.view == "home":
+        view_home()
+    elif st.session_state.view == "search_results":
+        view_search_results()
+    elif st.session_state.view == "anime":
+        view_anime_details()
+    elif st.session_state.view == "player":
+        view_player()
 
 if __name__ == "__main__":
+    if 'search_query' not in st.session_state: st.session_state.search_query = ""
     main()
